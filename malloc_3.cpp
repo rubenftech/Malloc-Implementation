@@ -22,7 +22,7 @@ int size_meta_data = sizeof(MallocMetadata);
 
 const int MAX_ORDER = 10;
 const size_t MIN_BLOCK_SIZE = 128;
-const size_t MAX_BLOCK_SIZE = MIN_BLOCK_SIZE << MAX_ORDER;
+const size_t MAX_BLOCK_SIZE = MIN_BLOCK_SIZE << MAX_ORDER; // 128*2^10 = 1024
 bool initFlag= false;
 
 MallocMetadata* free_lists[MAX_ORDER + 1] = {nullptr};
@@ -39,19 +39,19 @@ int get_order(size_t size) {
     return order;
 }
 
-void insertBlockInFreeList(MallocMetadata* ptr) {
-    int order = get_order(ptr->size);
-    if (free_lists[order] == nullptr) {
-        free_lists[order] = ptr;
-        ptr->next = nullptr;
-        ptr->prev = nullptr;
-    } else {
-        free_lists[order]->prev = ptr;
-        ptr->next = free_lists[order];
-        ptr->prev = nullptr;
-        free_lists[order] = ptr;
-    }
-}
+//void insertBlockInFreeList(MallocMetadata* ptr) {
+//    int order = get_order(ptr->size);
+//    if (free_lists[order] == nullptr) {
+//        free_lists[order] = ptr;
+//        ptr->next = nullptr;
+//        ptr->prev = nullptr;
+//    } else {
+//        free_lists[order]->prev = ptr;
+//        ptr->next = free_lists[order];
+//        ptr->prev = nullptr;
+//        free_lists[order] = ptr;
+//    }
+//}
 
 // Helper function to split a block into two buddies
 void split_block(MallocMetadata* block, int block_order) {
@@ -115,12 +115,8 @@ void initOrderList() {
         newptr->size = MAX_BLOCK_SIZE;
         newptr->is_free = true;
         newptr->next = nullptr;
-        newptr->prev = prev;
-        prev = newptr;
-        if (prev != nullptr) {
-            prev->next = newptr;
-        }
-        insertBlockInFreeList(newptr);
+        newptr->prev = nullptr;
+       //insertBlockInFreeList(newptr);
     }
 }
 
