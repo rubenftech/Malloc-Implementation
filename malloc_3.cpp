@@ -124,6 +124,32 @@ void initOrderList() {
     }
 }
 
+// Allocates a new memory block of size 'size' bytes using mmap().
+void* smmap(size_t size) {
+    if (size == 0 || size > MAX_SIZE) {
+        return nullptr;
+    }
+
+    MallocMetadata* block = (MallocMetadata*)mmap(nullptr, size + size_meta_data, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (block == (void*)-1) {
+        return nullptr;
+    }
+    block->size = size + size_meta_data;
+    block->is_free = false;
+    block->next = mmap_blocks;
+    block->prev = nullptr;
+    if (mmap_blocks != nullptr) {
+        mmap_blocks->prev = block;
+    }
+    mmap_blocks = block;
+
+    num_allocated_blocks++;
+    num_allocated_bytes += size;
+    num_meta_data_bytes += size_meta_data;
+    return (void*)(block + 1);
+}
+
+
 // Searches for a free block with at least 'size' bytes
 void* smalloc(size_t size) {
     if (size == 0 || size > MAX_SIZE) {
@@ -159,8 +185,10 @@ void* smalloc(size_t size) {
         }
     }
 
-    // If no suitable block is found, send exception
-
+    // If no suitable block is found, use mmap to allocate a new block
+    if (size > MAX_BLOCK_SIZE) {
+        return smmap(size);
+    }
 }
 
 // Allocates a new memory block of size 'size' bytes.
@@ -220,30 +248,6 @@ void* srealloc(void* oldp, size_t size) {
 }
 
 
-// Allocates a new memory block of size 'size' bytes using mmap().
-void* smmap(size_t size) {
-    if (size == 0 || size > MAX_SIZE) {
-        return nullptr;
-    }
-
-    MallocMetadata* block = (MallocMetadata*)mmap(nullptr, size + size_meta_data, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (block == (void*)-1) {
-        return nullptr;
-    }
-    block->size = size + size_meta_data;
-    block->is_free = false;
-    block->next = mmap_blocks;
-    block->prev = nullptr;
-    if (mmap_blocks != nullptr) {
-        mmap_blocks->prev = block;
-    }
-    mmap_blocks = block;
-
-    num_allocated_blocks++;
-    num_allocated_bytes += size;
-    num_meta_data_bytes += size_meta_data;
-    return (void*)(block + 1);
-}
 
 // Frees the memory space pointed to by 'ptr' that was allocated using mmap().
 void smunmap(void* p) {
