@@ -85,7 +85,7 @@ void* smalloc(size_t size){
         return NULL;
     }
 
-    size_t req_size = size + sizeof(MallocMetadata);
+    size_t needed_size = size + sizeof(MallocMetadata);
     MallocMetadata* curr= list;
     while(curr){
         if(curr->is_free && curr->size >= size){
@@ -98,31 +98,31 @@ void* smalloc(size_t size){
     }
 
     //if we got here, we need to allocate a new block
-    void* prog_brk = sbrk(req_size);
-    if(prog_brk == (void*)-1){
+    void* newptr = sbrk(needed_size);
+    if(newptr == (void*)-1){
         return NULL;
     }
 
-    MallocMetadata* meta = (MallocMetadata*)prog_brk;
-    meta->size=size;
-    meta->is_free=false;
+    MallocMetadata* pMetadata = (MallocMetadata*)newptr;
+    pMetadata->size=size;
+    pMetadata->is_free=false;
 
     MallocMetadata* first=list;
     if(first==NULL){
-        list = meta;
+        list = pMetadata;
     }
     else{
         while(first->next!=NULL){
             first=first->next;
         }
-        first->next=meta;
+        first->next=pMetadata;
     }
-    meta->prev=first;
-    meta->next=NULL;
+    pMetadata->prev=first;
+    pMetadata->next=NULL;
     num_allocated_blocks++;
-    num_allocated_bytes += meta->size;
+    num_allocated_bytes += pMetadata->size;
     num_meta_data_bytes += sizeof(MallocMetadata);
-    return (char*)prog_brk + sizeof(MallocMetadata);
+    return (char*)newptr + sizeof(MallocMetadata);
 }
 
 //Allocates a new memory block of size ‘size’ bytes.
