@@ -12,56 +12,117 @@ struct MallocMetadata {
     MallocMetadata* prev;
 };
 
-int num_free_blocks=0;
-int num_free_bytes=0;
-int num_allocated_blocks=0;
-int num_allocated_bytes=0;
-int num_meta_data_bytes=0;
-int size_meta_data=sizeof (MallocMetadata);
+size_t num_free_blocks=0;
+size_t num_free_bytes=0;
+size_t num_allocated_blocks=0;
+size_t num_allocated_bytes=0;
+size_t num_meta_data_bytes=0;
 
-MallocMetadata* first = 0;
+MallocMetadata* list = nullptr;
 
 //Searches for a free block with at least ‘size’ bytes or allocates (sbrk()) one if none are
-void* smalloc(size_t size) {
-    if (size == 0 || size > MAX_SIZE) {
-        return nullptr;
+//void* smalloc(size_t size) {
+//    if (size == 0 || size > MAX_SIZE) {
+//        return nullptr;
+//    }
+//
+//    MallocMetadata *last = nullptr;
+//    //search for a free block
+//    for (MallocMetadata *ptr = first; ptr != nullptr; ptr = ptr->next) {
+//        last = ptr;
+//        if (ptr->is_free && ptr->size >= size) {
+//            ptr->is_free = false;
+//            num_free_blocks --;
+//            num_free_bytes -= ptr->size;
+//            return (char*) ptr + sizeof(MallocMetadata);
+//        }
+//    }
+//
+//    //if we got here, we need to allocate a new block
+//    MallocMetadata *new_ptr = (MallocMetadata *) sbrk (size + sizeof(MallocMetadata));
+//    if (new_ptr == (void *) -1) {
+//        return nullptr;
+//    }
+//
+//    new_ptr->size = size;
+//    new_ptr->is_free = false;
+//    num_allocated_blocks++;
+//    num_allocated_bytes += size;
+//
+//
+//    if (first == nullptr) {
+//        first = new_ptr;
+//    } else {
+//        last->next = new_ptr;
+//    }
+//    new_ptr->next = nullptr;
+//    new_ptr->prev = last;
+//
+//    return (char*) new_ptr + sizeof (MallocMetadata);
+//}
+
+void insert(MallocMetadata* node){
+    MallocMetadata* first=list;
+    if(first==NULL){
+        list = node;
+    }
+    else{
+        while(first->next!=NULL){
+            first=first->next;
+        }
+        first->next=node;
+    }
+    node->prev=first;
+    node->next=NULL;
+    num_allocated_blocks++;
+    num_allocated_bytes += node->size;
+    num_meta_data_bytes += sizeof(MallocMetadata);
+}
+
+// MAIN FUNCTIONS
+void* smalloc(size_t size){
+    if(size <= 0 || size>MAX_SIZE) {
+        return NULL;
     }
 
-    MallocMetadata *last;
-
-    //search for a free block
-    for (MallocMetadata *ptr = first; ptr != nullptr; ptr = ptr->next) {
-        last = ptr;
-        if (ptr->is_free && ptr->size >= size + sizeof(MallocMetadata)) {
-            ptr->is_free = false;
-            num_free_blocks --;
-            num_free_bytes -= ptr->size;
-            return (void *) (ptr + sizeof(MallocMetadata));
+    size_t needed_size = size + sizeof(MallocMetadata);
+    MallocMetadata* curr= list;
+    while(curr){
+        if(curr->is_free && curr->size >= size){
+            curr->is_free=false;
+            num_free_blocks--;
+            num_free_bytes-=curr->size;
+            return (char*)curr + sizeof(MallocMetadata);
         }
+        curr=curr->next;
     }
 
     //if we got here, we need to allocate a new block
-    MallocMetadata *new_ptr = (MallocMetadata *) sbrk (size + sizeof(MallocMetadata));
-    if (new_ptr == (void *) -1) {
-        return nullptr;
+    void* newptr = sbrk(needed_size);
+    if(newptr == (void*)-1){
+        return NULL;
     }
 
-    new_ptr->size = size;
-    new_ptr->is_free = false;
+    MallocMetadata* pMetadata = (MallocMetadata*)newptr;
+    pMetadata->size=size;
+    pMetadata->is_free=false;
 
-    new_ptr->next = nullptr;
-    new_ptr->prev = last;
-    if (first == nullptr) {
-        first = new_ptr;
-    } else {
-        last->next = new_ptr;
+    MallocMetadata* first=list;
+    if(first==NULL){
+        list = pMetadata;
     }
-
+    else{
+        while(first->next!=NULL){
+            first=first->next;
+        }
+        first->next=pMetadata;
+    }
+    pMetadata->prev=first;
+    pMetadata->next=NULL;
     num_allocated_blocks++;
-    num_allocated_bytes += size;
-    num_meta_data_bytes += sizeof (MallocMetadata);
-
-    return (void*) (new_ptr + sizeof (MallocMetadata));
+    num_allocated_bytes += pMetadata->size;
+    num_meta_data_bytes += sizeof(MallocMetadata);
+    return (char*)newptr + sizeof(MallocMetadata);
 }
 
 //Allocates a new memory block of size ‘size’ bytes.
@@ -85,7 +146,7 @@ void sfree(void* p){
     }
     ptr->is_free=true;
     num_free_blocks++;
-    num_free_bytes+=ptr->size;
+    num_free_bytes += ptr->size;
     return;
 }
 
@@ -135,5 +196,5 @@ size_t _num_meta_data_bytes(){
 }
 
 size_t _size_meta_data(){
-    return size_meta_data;
+    return sizeof (MallocMetadata);
 }
