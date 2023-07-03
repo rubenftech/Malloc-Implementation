@@ -34,14 +34,14 @@ void* smalloc(size_t size) {
         last = ptr;
         if (ptr->is_free && ptr->size >= size + sizeof(MallocMetadata)) {
             ptr->is_free = false;
-            num_free_blocks--;
-            num_free_bytes -= size;
+            num_free_blocks --;
+            num_free_bytes -= ptr->size;
             return (void *) (ptr + sizeof(MallocMetadata));
         }
     }
 
     //if we got here, we need to allocate a new block
-    MallocMetadata *new_ptr = (MallocMetadata *) sbrk(size + sizeof(MallocMetadata));
+    MallocMetadata *new_ptr = (MallocMetadata *) sbrk (size + sizeof(MallocMetadata));
     if (new_ptr == (void *) -1) {
         return nullptr;
     }
@@ -79,8 +79,7 @@ void sfree(void* p){
     if (p== nullptr){
         return;
     }
-    MallocMetadata* ptr = (MallocMetadata*) p;
-    ptr -= sizeof (MallocMetadata);
+    MallocMetadata* ptr = (MallocMetadata*)((char*) p - sizeof(MallocMetadata));
     if (ptr->is_free){
         return;
     }
@@ -93,7 +92,6 @@ void sfree(void* p){
 //Changes the size of the memory block pointed to by ‘ptr’ to ‘size’ bytes and returns a pointer to the
 void* srealloc(void* oldp, size_t size){
     if (size==0||size>MAX_SIZE){
-        sfree(oldp);
         return nullptr;
     }
 
@@ -101,8 +99,7 @@ void* srealloc(void* oldp, size_t size){
         return smalloc(size);
     }
 
-    MallocMetadata* ptr = (MallocMetadata*) oldp;
-    ptr -= sizeof (MallocMetadata);
+    MallocMetadata* ptr = (MallocMetadata*)((char*) oldp - sizeof(MallocMetadata));
     if (ptr->size>=size){
         return oldp;
     }
