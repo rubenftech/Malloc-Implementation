@@ -20,66 +20,9 @@ size_t num_meta_data_bytes=0;
 
 MallocMetadata* list = nullptr;
 
+
+
 //Searches for a free block with at least ‘size’ bytes or allocates (sbrk()) one if none are
-//void* smalloc(size_t size) {
-//    if (size == 0 || size > MAX_SIZE) {
-//        return nullptr;
-//    }
-//
-//    MallocMetadata *last = nullptr;
-//    //search for a free block
-//    for (MallocMetadata *ptr = first; ptr != nullptr; ptr = ptr->next) {
-//        last = ptr;
-//        if (ptr->is_free && ptr->size >= size) {
-//            ptr->is_free = false;
-//            num_free_blocks --;
-//            num_free_bytes -= ptr->size;
-//            return (char*) ptr + sizeof(MallocMetadata);
-//        }
-//    }
-//
-//    //if we got here, we need to allocate a new block
-//    MallocMetadata *new_ptr = (MallocMetadata *) sbrk (size + sizeof(MallocMetadata));
-//    if (new_ptr == (void *) -1) {
-//        return nullptr;
-//    }
-//
-//    new_ptr->size = size;
-//    new_ptr->is_free = false;
-//    num_allocated_blocks++;
-//    num_allocated_bytes += size;
-//
-//
-//    if (first == nullptr) {
-//        first = new_ptr;
-//    } else {
-//        last->next = new_ptr;
-//    }
-//    new_ptr->next = nullptr;
-//    new_ptr->prev = last;
-//
-//    return (char*) new_ptr + sizeof (MallocMetadata);
-//}
-
-void insert(MallocMetadata* node){
-    MallocMetadata* first=list;
-    if(first==NULL){
-        list = node;
-    }
-    else{
-        while(first->next!=NULL){
-            first=first->next;
-        }
-        first->next=node;
-    }
-    node->prev=first;
-    node->next=NULL;
-    num_allocated_blocks++;
-    num_allocated_bytes += node->size;
-    num_meta_data_bytes += sizeof(MallocMetadata);
-}
-
-// MAIN FUNCTIONS
 void* smalloc(size_t size){
     if(size <= 0 || size>MAX_SIZE) {
         return NULL;
@@ -87,6 +30,7 @@ void* smalloc(size_t size){
 
     size_t needed_size = size + sizeof(MallocMetadata);
     MallocMetadata* curr= list;
+    //search for a free block
     while(curr){
         if(curr->is_free && curr->size >= size){
             curr->is_free=false;
