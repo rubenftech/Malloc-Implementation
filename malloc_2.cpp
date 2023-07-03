@@ -23,34 +23,39 @@ MallocMetadata* first = 0;
 
 //Searches for a free block with at least ‘size’ bytes or allocates (sbrk()) one if none are
 void* smalloc(size_t size) {
-    if (size == 0||size>MAX_SIZE) {
+    if (size == 0 || size > MAX_SIZE) {
         return nullptr;
     }
-    MallocMetadata* last;
+
+    MallocMetadata *last;
 
     //search for a free block
     for (MallocMetadata *ptr = first; ptr != nullptr; ptr = ptr->next) {
-        last=ptr;
-        if (ptr->is_free && ptr->size >= size) {
+        last = ptr;
+        if (ptr->is_free && ptr->size >= size + sizeof(MallocMetadata)) {
             ptr->is_free = false;
-            num_allocated_blocks++;
-            num_allocated_bytes += size;
             num_free_blocks--;
             num_free_bytes -= size;
-            return (void*) (ptr + sizeof (MallocMetadata));
+            return (void *) (ptr + sizeof(MallocMetadata));
         }
     }
 
     //if we got here, we need to allocate a new block
-    MallocMetadata* new_ptr = (MallocMetadata*) sbrk(size + sizeof (MallocMetadata));
-    if (new_ptr == (void*) -1) {
+    MallocMetadata *new_ptr = (MallocMetadata *) sbrk(size + sizeof(MallocMetadata));
+    if (new_ptr == (void *) -1) {
         return nullptr;
     }
+
     new_ptr->size = size;
     new_ptr->is_free = false;
+
     new_ptr->next = nullptr;
     new_ptr->prev = last;
-    last->next = new_ptr;
+    if (first == nullptr) {
+        first = new_ptr;
+    } else {
+        last->next = new_ptr;
+    }
 
     num_allocated_blocks++;
     num_allocated_bytes += size;
@@ -62,6 +67,9 @@ void* smalloc(size_t size) {
 //Allocates a new memory block of size ‘size’ bytes.
 void* scalloc(size_t num, size_t size){
     void* new_ptr= smalloc(num*size);
+    if (new_ptr == nullptr){
+        return nullptr;
+    }
     std::memset(new_ptr,0,num*size);
     return new_ptr;
 }
@@ -84,13 +92,15 @@ void sfree(void* p){
 
 //Changes the size of the memory block pointed to by ‘ptr’ to ‘size’ bytes and returns a pointer to the
 void* srealloc(void* oldp, size_t size){
-    if (oldp== nullptr){
-        return smalloc(size);
-    }
     if (size==0||size>MAX_SIZE){
         sfree(oldp);
         return nullptr;
     }
+
+    if (oldp== nullptr){
+        return smalloc(size);
+    }
+
     MallocMetadata* ptr = (MallocMetadata*) oldp;
     ptr -= sizeof (MallocMetadata);
     if (ptr->size>=size){
@@ -100,8 +110,9 @@ void* srealloc(void* oldp, size_t size){
     if (new_ptr== nullptr){
         return nullptr;
     }
-    std::memmove(new_ptr,oldp,ptr->size);
+
     sfree(oldp);
+    std::memmove(new_ptr,oldp,ptr->size);
     return new_ptr;
 }
 
