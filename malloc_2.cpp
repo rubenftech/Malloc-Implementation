@@ -28,6 +28,7 @@ void* smalloc(size_t size) {
     }
 
     MallocMetadata *last;
+
     //search for a free block
     for (MallocMetadata *ptr = first; ptr != nullptr; ptr = ptr->next) {
         last = ptr;

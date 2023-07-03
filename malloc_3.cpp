@@ -1,14 +1,17 @@
 
 
 #include <unistd.h>
-#include <cstring>
-#include <cstdlib>
+#include <string.h>
+#include <sys/mman.h>
+#include <ctime>
 #define MAX_SIZE 100000000
 
 // size under 64 bytes
 struct MallocMetadata {
     size_t size;
     bool is_free;
+    bool is_maped;
+    int cookie;
     MallocMetadata* next;
     MallocMetadata* prev;
 };
@@ -19,6 +22,7 @@ int num_allocated_blocks = 0;
 int num_allocated_bytes = 0;
 int num_meta_data_bytes = 0;
 int size_meta_data = sizeof(MallocMetadata);
+int gCookie;
 
 const int MAX_ORDER = 10;
 const size_t MIN_BLOCK_SIZE = 128;
@@ -39,19 +43,39 @@ int get_order(size_t size) {
     return order;
 }
 
-//void insertBlockInFreeList(MallocMetadata* ptr) {
-//    int order = get_order(ptr->size);
-//    if (free_lists[order] == nullptr) {
-//        free_lists[order] = ptr;
-//        ptr->next = nullptr;
-//        ptr->prev = nullptr;
-//    } else {
-//        free_lists[order]->prev = ptr;
-//        ptr->next = free_lists[order];
-//        ptr->prev = nullptr;
-//        free_lists[order] = ptr;
-//    }
-//}
+void checkOverflow(MallocMetadata* node){
+    if(node != NULL && node->cookie != gCookie)
+        exit(0xdeadbeef);
+}
+
+void remove_block(MallocMetadata* node, MallocMetadata* list){
+    MallocMetadata *curr, *right, *left;
+    curr=list;
+    if(curr == NULL || node == NULL) return;
+    checkOverflow(curr);
+    checkOverflow(node);
+    if(curr == node){
+        list=curr->next;
+        curr=curr->next;
+        if(curr!=NULL)
+            curr->prev = NULL;
+        return;
+    }
+    left=NULL;
+    right=curr->next;
+    while(curr != NULL){
+        checkOverflow(right);
+        if(curr == node) break;
+        left=curr;
+        curr=right;
+        right=curr->next;
+    }
+
+    if(curr != node) return;
+    if(left != NULL) left->next=right;
+    if(right != NULL) right->prev=left;
+
+}
 
 // Helper function to split a block into two buddies
 void split_block(MallocMetadata* block, int block_order) {
@@ -106,32 +130,31 @@ void merge_blocks(MallocMetadata* block, int block_order) {
 //create 32 blocks and put them in the list of order
 void initOrderList() {
     initFlag = true;
-    MallocMetadata *prev = nullptr;
     for (int i = 0; i < 32; ++i) {
         MallocMetadata *newptr = (MallocMetadata *) sbrk(MAX_BLOCK_SIZE);
         if (newptr == (void *) -1) {
             return;
         }
+        srand(time(NULL));
+        gCookie = rand();
         newptr->size = MAX_BLOCK_SIZE;
         newptr->is_free = true;
-        newptr->next = nullptr;
+        newptr->is_maped = false;
+        newptr->next = free_lists[MAX_ORDER];
         newptr->prev = nullptr;
-       //insertBlockInFreeList(newptr);
+        free_lists[MAX_ORDER]=newptr;
     }
 }
 
 // Allocates a new memory block of size 'size' bytes using mmap().
 void* smmap(size_t size) {
-    if (size == 0 || size > MAX_SIZE) {
-        return nullptr;
-    }
-
-    MallocMetadata* block = (MallocMetadata*)mmap(nullptr, size + size_meta_data, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    MallocMetadata* block = (MallocMetadata*)mmap(nullptr, size, PROT_READ, MAP_PRIVATE, -1, 0);
     if (block == (void*)-1) {
         return nullptr;
     }
-    block->size = size + size_meta_data;
+    block->size = size;
     block->is_free = false;
+    block->is_maped = true;
     block->next = mmap_blocks;
     block->prev = nullptr;
     if (mmap_blocks != nullptr) {
@@ -148,12 +171,12 @@ void* smmap(size_t size) {
 
 // Searches for a free block with at least 'size' bytes
 void* smalloc(size_t size) {
-    if (size == 0 || size > MAX_SIZE) {
+    if (size <= 0) {
         return nullptr;
     }
 
     if (!initFlag){
-       initOrderList();
+        initOrderList();
     }
 
     int order = get_order(size + size_meta_data);
@@ -174,10 +197,8 @@ void* smalloc(size_t size) {
 
             block->is_free = false;
             num_allocated_blocks++;
-            num_allocated_bytes += block->size - size_meta_data;
-            num_free_blocks--;
-            num_free_bytes -= block->size;
-            return (void*)(block + 1);
+            num_allocated_bytes += block->size ;
+            return (char*)block + sizeof(MallocMetadata);
         }
     }
 
@@ -185,13 +206,14 @@ void* smalloc(size_t size) {
     if (size > MAX_BLOCK_SIZE) {
         return smmap(size);
     }
+    return nullptr;
 }
 
 // Allocates a new memory block of size 'size' bytes.
 void* scalloc(size_t num, size_t size) {
     void* new_ptr = smalloc(num * size);
     if (new_ptr != nullptr) {
-        std::memset(new_ptr, 0, num * size);
+        memset(new_ptr, 0, num * size);
     }
     return new_ptr;
 }
@@ -201,9 +223,13 @@ void sfree(void* p) {
     if (p == nullptr) {
         return;
     }
-    MallocMetadata* ptr = (MallocMetadata*)p;
-    ptr--;
+    MallocMetadata* ptr = (MallocMetadata*)((char*) p - sizeof(MallocMetadata));
     if (ptr->is_free) {
+        return;
+    }
+    if (ptr->is_maped) {
+        remove_block(ptr, mmap_blocks);
+        munmap(ptr, ptr->size+size_meta_data);
         return;
     }
     ptr->is_free = true;
@@ -214,16 +240,17 @@ void sfree(void* p) {
 
 // Changes the size of the memory block pointed to by 'ptr' to 'size' bytes and returns a pointer to the
 void* srealloc(void* oldp, size_t size) {
+    if (size == 0 || size > MAX_SIZE) {
+        return nullptr;
+    }
+
     if (oldp == nullptr) {
         return smalloc(size);
     }
-    if (size == 0 || size > MAX_SIZE) {
-        sfree(oldp);
-        return nullptr;
-    }
-    MallocMetadata* ptr = (MallocMetadata*)oldp;
-    ptr--;
+
+    MallocMetadata* ptr = (MallocMetadata*)((char*) oldp - sizeof(MallocMetadata));
     size_t old_size = ptr->size - size_meta_data;
+
     if (ptr->size >= size + size_meta_data) {
         // Check if the block can be split further
         int order = get_order(size + size_meta_data);
@@ -236,7 +263,7 @@ void* srealloc(void* oldp, size_t size) {
     } else {
         void* new_ptr = smalloc(size);
         if (new_ptr != nullptr) {
-            std::memmove(new_ptr, oldp, old_size);
+            memmove(new_ptr, oldp, old_size);
         }
         sfree(oldp);
         return new_ptr;
@@ -245,33 +272,33 @@ void* srealloc(void* oldp, size_t size) {
 
 
 
-// Frees the memory space pointed to by 'ptr' that was allocated using mmap().
-void smunmap(void* p) {
-    if (p == nullptr) {
-        return;
-    }
-    MallocMetadata* ptr = (MallocMetadata*)p;
-    ptr--;
-    if (ptr->is_free) {
-        return;
-    }
-
-    // Remove block from mmap blocks list
-    if (ptr->prev != nullptr) {
-        ptr->prev->next = ptr->next;
-    } else {
-        mmap_blocks = ptr->next;
-    }
-    if (ptr->next != nullptr) {
-        ptr->next->prev = ptr->prev;
-    }
-
-    num_allocated_blocks--;
-    num_allocated_bytes -= ptr->size - size_meta_data;
-    num_meta_data_bytes -= size_meta_data;
-
-    munmap(ptr, ptr->size);
-}
+//// Frees the memory space pointed to by 'ptr' that was allocated using mmap().
+//void smunmap(void* p) {
+//    if (p == nullptr) {
+//        return;
+//    }
+//    MallocMetadata* ptr = (MallocMetadata*)p;
+//    ptr--;
+//    if (ptr->is_free) {
+//        return;
+//    }
+//
+//    // Remove block from mmap blocks list
+//    if (ptr->prev != nullptr) {
+//        ptr->prev->next = ptr->next;
+//    } else {
+//        mmap_blocks = ptr->next;
+//    }
+//    if (ptr->next != nullptr) {
+//        ptr->next->prev = ptr->prev;
+//    }
+//
+//    num_allocated_blocks--;
+//    num_allocated_bytes -= ptr->size - size_meta_data;
+//    num_meta_data_bytes -= size_meta_data;
+//
+//    munmap(ptr, ptr->size);
+//}
 
 size_t _num_free_blocks() {
     return num_free_blocks;
