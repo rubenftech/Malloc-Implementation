@@ -27,44 +27,40 @@ void* smalloc(size_t size) {
         return nullptr;
     }
 
-    size_t req_size = size + sizeof(MallocMetadata);
-    MallocMetadata* curr=first;
-    while(curr!=NULL){
-        if(curr->is_free && curr->size >= size){
-            curr->is_free=false;
-            num_free_blocks--;
-            num_free_bytes-=curr->size;
-            return (char*)curr + sizeof(MallocMetadata);
+    MallocMetadata *last;
+    //search for a free block
+    for (MallocMetadata *ptr = first; ptr != nullptr; ptr = ptr->next) {
+        last = ptr;
+        if (ptr->is_free && ptr->size >= size + sizeof(MallocMetadata)) {
+            ptr->is_free = false;
+            num_free_blocks --;
+            num_free_bytes -= ptr->size;
+            return (void *) (ptr + sizeof(MallocMetadata));
         }
-        curr=curr->next;
     }
 
-    void* prog_brk = sbrk(req_size);
-    if(prog_brk==(void*)-1)
-    {
-        return NULL;
+    //if we got here, we need to allocate a new block
+    MallocMetadata *new_ptr = (MallocMetadata *) sbrk (size + sizeof(MallocMetadata));
+    if (new_ptr == (void *) -1) {
+        return nullptr;
     }
 
-    MallocMetadata* meta = (MallocMetadata*)prog_brk;
-    meta->size=size;
-    meta->is_free=false;
+    new_ptr->size = size;
+    new_ptr->is_free = false;
 
-    MallocMetadata* ptr=first;
-    if(first==NULL){
-        first = meta;
+    new_ptr->next = nullptr;
+    new_ptr->prev = last;
+    if (first == nullptr) {
+        first = new_ptr;
+    } else {
+        last->next = new_ptr;
     }
-    else{
-        while(first->next!=NULL){
-            first=first->next;
-        }
-        first->next=meta;
-    }
-    meta->prev=first;
-    meta->next=NULL;
+
     num_allocated_blocks++;
-    num_allocated_bytes += meta->size;
-    num_meta_data_bytes += sizeof(MallocMetadata);
-    return (char*)prog_brk + sizeof(MallocMetadata);
+    num_allocated_bytes += size;
+    num_meta_data_bytes += sizeof (MallocMetadata);
+
+    return (void*) (new_ptr + sizeof (MallocMetadata));
 }
 
 //Allocates a new memory block of size ‘size’ bytes.
