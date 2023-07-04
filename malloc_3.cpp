@@ -41,33 +41,30 @@ int get_order(size_t size) {
 }
 
 
-void checkOverflow(MallocMetadata* ptr){
-    if(ptr && ptr->cookie != gCookie) exit(0xdeadbeef);
-}
+//void checkOverflow(MallocMetadata* ptr){
+//    if(ptr && ptr->cookie != gCookie) exit(0xdeadbeef);
+//}
 
-// Split a block into two blocks of size/2
+// Split a block into two blocks of size
 void* split_block(MallocMetadata* block, size_t size) {
     if (block== nullptr || block->size < 2*size) {
         return nullptr;
     }
     // Split the block in half
     MallocMetadata* buddy = (MallocMetadata*)((char*)block + size);
-    buddy->size = block->size - size;
+    buddy->size = block->size - size - sizeof(MallocMetadata);
     buddy->is_free = true;
-    buddy->prev = block;
-    buddy->next = block->next;
 
-    block->size = size;
+    block->size = size - sizeof(MallocMetadata);
     block->is_free = false;
     block->next = buddy;
 
     if (buddy->next) {
-        buddy->next->prev = buddy;
+        buddy->next->prev = block->prev;
     }
 
     // Update free blocks list
     size_t order = get_order(buddy->size);
-    buddy->prev = nullptr;
 
     MallocMetadata* curr = list[order];
     MallocMetadata* prev = nullptr;
@@ -77,9 +74,9 @@ void* split_block(MallocMetadata* block, size_t size) {
     }
 
     if (prev) {
-        prev->next = buddy;
+        prev->next = block;
     } else {
-        list[order] = buddy;
+        list[order] = block;
     }
 
     buddy->next = curr;
@@ -163,20 +160,19 @@ void merge_blocks(MallocMetadata* block){
 
 // Allocates a new memory block of size 'size' bytes using mmap().
 void* smmap(size_t size) {
-    MallocMetadata* block = (MallocMetadata*)mmap(nullptr, size, PROT_READ, MAP_PRIVATE, -1, 0);
+    MallocMetadata* block = (MallocMetadata*) mmap(nullptr, size, PROT_READ, MAP_PRIVATE, -1, 0);
     if (block == (void*)-1) {
         return nullptr;
     }
-   // checkOverflow(block);
     block->size = size;
     block->is_free = false;
     block->is_maped = true;
-    block->next = mmap_blocks;
-    block->prev = nullptr;
     if (mmap_blocks != nullptr) {
         mmap_blocks->prev = block;
+        block->next = mmap_blocks;
     }
     mmap_blocks = block;
+    block->prev = nullptr;
     return (void*)(block + 1);
 }
 
@@ -187,12 +183,11 @@ void smunmap(void* p) {
     if (p == nullptr) {
         return;
     }
-    MallocMetadata* ptr = (MallocMetadata*)p;
-    ptr--;
+    MallocMetadata* ptr = (MallocMetadata*) p - sizeof (MallocMetadata);
+
     if (ptr->is_free) {
         return;
     }
-
     // Remove block from mmap blocks list
     if (ptr->prev != nullptr) {
         ptr->prev->next = ptr->next;
@@ -202,7 +197,6 @@ void smunmap(void* p) {
     if (ptr->next != nullptr) {
         ptr->next->prev = ptr->prev;
     }
-
     munmap(ptr, ptr->size);
 }
 
@@ -238,27 +232,22 @@ void* smalloc(size_t size) {
     if (size + sizeof (MallocMetadata) > MAX_BLOCK_SIZE) {
         return smmap(size);
     }
-    int needed_size= size + sizeof (MallocMetadata);
+    int needed_size = size + sizeof (MallocMetadata);
     int order = get_order(needed_size);
 
     // Search for a free block in the corresponding order
     for (int i = order; i <= MAX_ORDER; i++) {
         MallocMetadata *block = list[i];
-        checkOverflow(block);
-        if (block != nullptr) {
-            // Remove block from free list
-            list[i] = block->next;
-            if (block->next != nullptr) {
-                block->next->prev = nullptr;
-            }
+        //checkOverflow(block);
+        if (block != nullptr && block->is_free) {
 
             // Check if the block can be split further
             while (i > order) {
                 split_block(block, MIN_BLOCK_SIZE * pow(2, i - 1));
                 i--;
             }
+            //mark the block as used
             block->is_free = false;
-
             return (char *) block + sizeof(MallocMetadata);
         }
     }
