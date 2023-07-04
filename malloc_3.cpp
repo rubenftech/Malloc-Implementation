@@ -41,9 +41,9 @@ int get_order(size_t size) {
 }
 
 
-//void checkOverflow(MallocMetadata* ptr){
-//    if(ptr && ptr->cookie != gCookie) exit(0xdeadbeef);
-//}
+void checkOverflow(MallocMetadata* ptr){
+    if(ptr && ptr->cookie != gCookie) exit(0xdeadbeef);
+}
 
 // Split a block into two blocks of size
 void* split_block(MallocMetadata* block, size_t size) {
@@ -211,7 +211,7 @@ void initOrderList() {
         }
         srand(time(NULL));
         gCookie = rand();
-        newptr->size = MAX_BLOCK_SIZE;
+        newptr->size = MAX_BLOCK_SIZE-sizeof (MallocMetadata);
         newptr->is_free = true;
         newptr->is_maped = false;
         newptr->next = list[MAX_ORDER];
@@ -238,7 +238,7 @@ void* smalloc(size_t size) {
     // Search for a free block in the corresponding order
     for (int i = order; i <= MAX_ORDER; i++) {
         MallocMetadata *block = list[i];
-        //checkOverflow(block);
+        checkOverflow(block);
         if (block != nullptr && block->is_free) {
 
             // Check if the block can be split further
